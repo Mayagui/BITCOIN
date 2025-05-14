@@ -1,0 +1,8 @@
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8503
+  Network URL: http://192.168.0.25:8503
+
+INFO:database_manager:Base de données initialisée avec succès
+INFO:database_manager:Données récupérées - Market: 0 lignes, Sentiment: 0 lignes, Trends: 0 lignes

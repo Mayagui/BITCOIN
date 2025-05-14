@@ -1,0 +1,9 @@
+INFO:data_collector:Base de données initialisée avec succès
+INFO:__main__:Début de la mise à jour des données
+INFO:data_collector:Données récupérées: 721 entrées
+INFO:data_collector:Première date: 2024-04-01 10:00:00
+INFO:data_collector:Dernière date: 2024-05-01 10:00:00
+INFO:data_collector:Données historiques stockées: 721 entrées
+INFO:__main__:Données de marché mises à jour avec succès
+INFO:__main__:Nombre d'entrées : 721
+INFO:__main__:Données de sentiment mises à jour avec succès
