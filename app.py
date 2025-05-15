@@ -23,6 +23,9 @@ from textblob import TextBlob
 import newspaper
 import os
 import snscrape.modules.twitter as sntwitter
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import confusion_matrix, classification_report
 
 # Rafraîchissement automatique toutes les 60 secondes (au lieu de 10)
 st_autorefresh(interval=60 * 1000, key="refresh")
@@ -120,18 +123,19 @@ class DatabaseManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
-            # Création de la table si elle n'existe pas
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS bitcoin_prices (
                 timestamp DATETIME PRIMARY KEY,
+                open FLOAT,
+                high FLOAT,
+                low FLOAT,
+                close FLOAT,
                 price FLOAT,
                 volume FLOAT,
                 rsi FLOAT,
                 change_24h FLOAT
             )
             ''')
-            
             conn.commit()
             conn.close()
             st.sidebar.success("Base de données initialisée avec succès")
@@ -454,6 +458,45 @@ def detect_rsi_divergence(df):
     else:
         return None
 
+def detect_trend(df):
+    score = 0
+    close = df['close'].iloc[-1]
+    sma50 = ta.trend.sma_indicator(df['close'], window=50).iloc[-1]
+    sma200 = ta.trend.sma_indicator(df['close'], window=200).iloc[-1]
+    macd = ta.trend.macd(df['close']).iloc[-1]
+    macd_signal = ta.trend.macd_signal(df['close']).iloc[-1]
+    rsi = ta.momentum.rsi(df['close']).iloc[-1]
+
+    # Moyennes mobiles
+    if close > sma50 > sma200:
+        score += 1
+    elif close < sma50 < sma200:
+        score -= 1
+
+    # MACD
+    if macd > macd_signal:
+        score += 1
+    else:
+        score -= 1
+
+    # RSI
+    if rsi > 60:
+        score += 1
+    elif rsi < 40:
+        score -= 1
+
+    # Interprétation
+    if score >= 2:
+        return "🟢 Forte tendance haussière"
+    elif score == 1:
+        return "🟢 Tendance haussière"
+    elif score == 0:
+        return "⚪️ Tendance neutre"
+    elif score == -1:
+        return "🔴 Tendance baissière"
+    else:
+        return "🔴 Forte tendance baissière"
+
 def backtest_strategy(df, score_func, threshold=1):
     """
     Backtest simple : achat si score > threshold, vente sinon.
@@ -480,6 +523,61 @@ def backtest_strategy(df, score_func, threshold=1):
     df['strategy_ret'] = df['btc_ret'] * df['signal'].shift(1).fillna(0)
     df['equity'] = (1 + df['strategy_ret']).cumprod()
     return df
+
+@st.cache_data
+def train_ml_model(df):
+    df = df.copy().dropna()
+    # Création de la cible : 1 si le prix monte le lendemain, 0 sinon
+    df['target'] = (df['close'].shift(-1) > df['close']).astype(int)
+    features = ['rsi', 'macd', 'macd_signal', 'volume']
+    df['rsi'] = ta.momentum.rsi(df['close'])
+    df['macd'] = ta.trend.macd(df['close'])
+    df['macd_signal'] = ta.trend.macd_signal(df['close'])
+    df = df.dropna()
+    X = df[features]
+    y = df['target']
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    return model
+
+def optimize_ml_model(df):
+    df = df.copy().dropna()
+    df['target'] = (df['close'].shift(-1) > df['close']).astype(int)
+    features = ['rsi', 'macd', 'macd_signal', 'volume']
+    df['rsi'] = ta.momentum.rsi(df['close'])
+    df['macd'] = ta.trend.macd(df['close'])
+    df['macd_signal'] = ta.trend.macd_signal(df['close'])
+    df = df.dropna()
+    X = df[features]
+    y = df['target']
+    param_grid = {'n_estimators': [50, 100, 200], 'max_depth': [3, 5, 10, None]}
+    grid = GridSearchCV(RandomForestClassifier(random_state=42), param_grid, cv=3)
+    grid.fit(X, y)
+    return grid.best_estimator_, grid.best_params_, grid.best_score_
+
+def predict_ml_signal(model, last_row):
+    features = ['rsi', 'macd', 'macd_signal', 'volume']
+    X_pred = last_row[features].values.reshape(1, -1)
+    pred = model.predict(X_pred)[0]
+    proba = model.predict_proba(X_pred)[0][1]
+    return pred, proba
+
+def ml_performance_report(df):
+    df = df.copy().dropna()
+    df['target'] = (df['close'].shift(-1) > df['close']).astype(int)
+    features = ['rsi', 'macd', 'macd_signal', 'volume']
+    df['rsi'] = ta.momentum.rsi(df['close'])
+    df['macd'] = ta.trend.macd(df['close'])
+    df['macd_signal'] = ta.trend.macd_signal(df['close'])
+    df = df.dropna()
+    X = df[features]
+    y = df['target']
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    y_pred = model.predict(X)
+    cm = confusion_matrix(y, y_pred)
+    report = classification_report(y, y_pred, output_dict=True)
+    return cm, report
 
 def main():
     analyzer = BitcoinAnalyzer()
@@ -529,6 +627,26 @@ def main():
             df_hist_5y.to_csv("bitcoin_5y.csv", index=False)
             st.success(f"{len(df_hist_5y)} lignes sauvegardées dans bitcoin_5y.csv")
 
+    if st.button("Optimiser le modèle ML"):
+        if 'df' in locals() and df is not None and not df.empty:
+            with st.spinner("Optimisation en cours..."):
+                best_model, best_params, best_score = optimize_ml_model(df)
+                st.success(f"Meilleurs paramètres : {best_params}")
+                st.info(f"Score de validation croisée : {best_score:.2f}")
+        else:
+            st.error("Aucune donnée chargée. Veuillez d'abord importer ou charger l'historique.")
+
+    if st.button("Afficher la performance du modèle ML"):
+        if 'df' in locals() and df is not None and not df.empty:
+            with st.spinner("Calcul en cours..."):
+                cm, report = ml_performance_report(df)
+                st.subheader("Matrice de confusion")
+                st.write(cm)
+                st.subheader("Rapport de classification")
+                st.json(report)
+        else:
+            st.error("Aucune donnée chargée. Veuillez d'abord importer ou charger l'historique.")
+
     # --- Chargement rapide de l'historique si période longue ---
     csv_path = "bitcoin_5y.csv"
     use_csv = os.path.exists(csv_path) and period_label[1] in ["3y", "4y", "5y"]
@@ -551,6 +669,41 @@ def main():
         if current_data:
             rsi = ta.momentum.rsi(df['close']).iloc[-1]
             macd_val = ta.trend.macd(df['close']).iloc[-1]
+            macd_signal = ta.trend.macd_signal(df['close']).iloc[-1]
+            price_change = current_data['change']
+            # Optionnel : sentiment et trends_score
+            sentiment = get_google_news_sentiment("Bitcoin")
+            trends_score, _ = get_google_trends_score_cached("Bitcoin", "now 7-d")
+            global_score = compute_global_score(rsi, macd_val, macd_signal, price_change, sentiment, trends_score)
+
+            cols = st.columns(5)
+            with cols[0]:
+                st.metric("PRIX BTC", f"${current_data['price']:,.2f}", f"{current_data['change']:.2f}%")
+            with cols[1]:
+                st.metric("RSI", f"{rsi:.1f}", "Suracheté" if rsi > 70 else "Survendu" if rsi < 30 else "Neutre")
+            with cols[2]:
+                st.metric("Volume 24h", f"${current_data['volume']/1e9:.2f}B")
+            with cols[3]:
+                st.metric("MACD", f"{macd_val:.2f}")
+            with cols[4]:
+                label = "🟢 Haussier" if global_score > 1 else "🔴 Baissier" if global_score < -1 else "⚪️ Neutre"
+                st.metric("Score Global", f"{global_score}/5", label)
+
+            with st.container():
+                cols_sent = st.columns(2)
+                with cols_sent[0]:
+                    if sentiment is not None:
+                        sentiment_label = "🟢 Positif" if sentiment > 0.1 else "🔴 Négatif" if sentiment < -0.1 else "⚪️ Neutre"
+                        st.metric("Sentiment Google News", f"{sentiment:.2f}", sentiment_label)
+                    else:
+                        st.caption("Aucune donnée Google News disponible pour le sentiment.")
+                with cols_sent[1]:
+                    if trends_score is not None:
+                        trends_label = "🟢 Fort intérêt" if trends_score > 50 else "🔴 Faible intérêt"
+                        st.metric("Google Trends (7j)", f"{trends_score}", trends_label)
+                    else:
+                        st.caption("Aucune donnée Google Trends disponible.")
+
             data_to_save = {
                 'price': current_data['price'],
                 'volume': current_data['volume'],
@@ -559,95 +712,35 @@ def main():
             }
             db.save_data(data_to_save)
 
-            cols = st.columns(4)
-            with cols[0]:
-                st.metric("PRIX BTC", f"${current_data['price']:,.2f}", f"{current_data['change']:.2f}%")
-            with cols[1]:
-                st.metric("RSI", f"{rsi:.1f}", "Suracheté" if rsi > 70 else "Survendu" if rsi < 30 else "Neutre")
-            with cols[2]:
-                st.metric("Volume 24h", f"${current_data['volume']/1e9:.2f}B")
-            with cols[3]:
-                st.metric("Tendance", "🟢 Haussière" if current_data['change'] > 0 else "🔴 Baissière")
-            st.metric("MACD", f"{macd_val:.2f}")
+            # Exemple d’interprétation automatique du RSI
+            if rsi > 70:
+                st.warning("⚠️ RSI suracheté : risque de correction baissière.")
+            elif rsi < 30:
+                st.info("🔵 RSI survendu : possible rebond haussier.")
+            else:
+                st.info("RSI neutre.")
+
+            # Exemple pour le MACD
+            if macd_val > macd_signal:
+                st.success("MACD haussier : momentum positif.")
+            else:
+                st.error("MACD baissier : momentum négatif.")
 
             # Détection de divergence RSI
             divergence = detect_rsi_divergence(df)
             if divergence:
                 st.warning(f"⚠️ {divergence} détectée (RSI)")
 
-            # Google Trends
-            trends_score, trends_series = get_google_trends_score_cached("Bitcoin", "now 7-d")
-            if trends_score is not None:
-                st.metric("Tendance Google Trends", f"{trends_score}/100")
-
-            # Google News Sentiment
-            news_sentiment = get_google_news_sentiment("Bitcoin")
-            if news_sentiment is not None:
-                sentiment_label = "Positif" if news_sentiment > 0.1 else "Négatif" if news_sentiment < -0.1 else "Neutre"
-                st.metric("Sentiment Google News", f"{news_sentiment:.2f}", sentiment_label)
-            else:
-                st.info("Pas de données Google News pour le sentiment.")
-
-            # Twitter Sentiment
-            try:
-                twitter_sentiment = get_twitter_sentiment("Bitcoin")
-                if twitter_sentiment is not None:
-                    sentiment_label = "Positif" if twitter_sentiment > 0.1 else "Négatif" if twitter_sentiment < -0.1 else "Neutre"
-                    st.metric("Sentiment Twitter", f"{twitter_sentiment:.2f}", sentiment_label)
-                else:
-                    st.info("Pas de données Twitter pour le sentiment.")
-            except Exception as e:
-                st.warning(f"Erreur Twitter : {e}")
-
-            # Score Global
-            macd_signal = ta.trend.macd_signal(df['close']).iloc[-1]
-            global_score = compute_global_score(
-                rsi,
-                macd_val,
-                macd_signal,
-                current_data['change'],
-                news_sentiment,
-                trends_score
-            )
-            score_label = "Haussier" if global_score > 1 else "Baissier" if global_score < -1 else "Neutre"
-
-            # Volume Median Check
-            volume_median = df['volume'].tail(30).median()
-            if current_data['volume'] > volume_median:
-                st.metric("Score Global", f"{global_score}/5", score_label)
-            else:
-                st.info("Signal ignoré (volume trop faible)")
-
-        fig = create_price_chart(df)
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Aucune donnée à afficher.")
-
-    # --- Backtesting ---
-    if st.button("Lancer le backtesting sur la période affichée"):
-        with st.spinner("Backtesting en cours..."):
-            df_bt = backtest_strategy(df, compute_global_score)
-            st.line_chart(df_bt.set_index('timestamp')['equity'])
-            perf = (df_bt['equity'].iloc[-1] - 1) * 100
-            st.success(f"Performance de la stratégie : {perf:.2f}%")
-            st.info(f"Nombre de signaux d'achat : {df_bt['signal'].sum()}")
-
-    # --- Affichage de l'historique stocké (optionnel, toujours en dehors du bloc principal) ---
-    if show_stored_data:
-        stored_data = db.get_data(days_to_show)
-        if not stored_data.empty:
-            import hashlib
-            df_hash = hashlib.md5(pd.util.hash_pandas_object(stored_data, index=True).values).hexdigest()
-            with st.expander("📊 Historique des prix stockés", expanded=True):
-                st.dataframe(stored_data)
-                csv = stored_data.to_csv(index=False)
-                st.download_button(
-                    label="📥 Exporter en CSV",
-                    data=csv,
-                    file_name=f'bitcoin_data_{datetime.now().strftime("%Y%m%d_%H%M")}.csv',
-                    mime='text/csv',
-                    key="download-csv-stock"
-                )
+        st.plotly_chart(create_price_chart(df), use_container_width=True)
+        if show_stored_data:
+            st.subheader("📊 Historique des prix stockés")
+            df_display = df.copy()
+            df_display['rsi'] = ta.momentum.rsi(df_display['close'])
+            df_display['change_24h'] = df_display['close'].pct_change(periods=1) * 100
+            st.dataframe(df_display.head(days_to_show))
+            add_export_button(df_display.head(days_to_show))
 
 if __name__ == "__main__":
     main()
+
+

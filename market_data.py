@@ -9,7 +9,7 @@ import ta
 import time
 import os
 import pickle
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import asyncio
 import sqlite3
 import logging
@@ -334,7 +334,6 @@ class BitcoinDataCollector:
         """Initialise le collecteur de données avec plusieurs exchanges"""
         self.exchanges = {
             'binance': ccxt.binance(),
-            'coinbase': ccxt.coinbasepro(),
             'kraken': ccxt.kraken()
         }
         self.cache_dir = "data_cache"
@@ -588,6 +587,44 @@ def display_market_data(df: pd.DataFrame, metrics: Dict):
     
     return fig
 
+def train_ml_model(df: pd.DataFrame):
+    """Entraîne un modèle de machine learning sur les données"""
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import StandardScaler
+
+    # Préparation des données
+    features = df[['open', 'high', 'low', 'close', 'volume']].dropna()
+    target = (df['close'].shift(-1) > df['close']).astype(int).dropna()
+    features = features.iloc[:-1]
+
+    # Vérification
+    if features.empty or target.empty or len(features) < 10:
+        raise ValueError("Pas assez de données pour entraîner le modèle ML.")
+
+    # Alignement des features et target
+    scaler = StandardScaler()
+    features_scaled = scaler.fit_transform(features)
+
+    X_train, X_test, y_train, y_test = train_test_split(features_scaled, target, test_size=0.2, random_state=42)
+
+    # Entraînement du modèle
+    model = RandomForestClassifier(random_state=42)
+    model.fit(X_train, y_train)
+
+    return model
+
+def predict_ml_signal(model, last_row: pd.DataFrame):
+    """Prédit le signal basé sur le modèle ML"""
+    from sklearn.preprocessing import StandardScaler
+
+    scaler = StandardScaler()
+    last_row_scaled = scaler.fit_transform(last_row[['open', 'high', 'low', 'close', 'volume']])
+    prediction = model.predict(last_row_scaled)
+    probability = model.predict_proba(last_row_scaled).max()
+
+    return prediction[0], probability
+
 def main():
     st.title("📊 Analyse du Marché Bitcoin")
     
@@ -649,6 +686,19 @@ def main():
         with col2:
             st.write("Statistiques de volume")
             st.dataframe(df['volume'].describe())
+        
+        # Machine Learning Prediction
+        if not df.empty and len(df) > 30:  # On veut au moins 30 lignes pour le ML
+            try:
+                model = train_ml_model(df)
+                last_row = df.iloc[[-1]]
+                ml_pred, ml_proba = predict_ml_signal(model, last_row)
+                ml_label = "Hausse probable" if ml_pred == 1 else "Baisse probable"
+                st.metric("Prédiction ML", ml_label, f"Confiance : {ml_proba:.2%}")
+            except Exception as e:
+                st.info(f"ML non disponible : {e}")
+        else:
+            st.info("Pas assez de données pour entraîner le modèle ML.")
         
         # Dernière mise à jour
         st.caption(f"Dernière mise à jour: {metrics['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
