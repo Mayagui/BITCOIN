@@ -22,7 +22,8 @@ import hashlib
 from textblob import TextBlob
 import newspaper
 import os
-import snscrape.modules.twitter as sntwitter
+
+
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import confusion_matrix, classification_report
@@ -167,6 +168,14 @@ class DatabaseManager:
     def save_bulk_data(self, df):
         try:
             conn = sqlite3.connect(self.db_path)
+            # Forcer l'ordre et la présence des colonnes
+            expected_cols = [
+                'timestamp', 'open', 'high', 'low', 'close', 'price', 'volume', 'rsi', 'change_24h'
+            ]
+            for col in expected_cols:
+                if col not in df.columns:
+                    df[col] = None
+            df = df[expected_cols]
             df.to_sql('bitcoin_prices', conn, if_exists='append', index=False)
             conn.close()
         except Exception as e:
@@ -366,17 +375,8 @@ def get_google_news_sentiment(query="Bitcoin", lang="fr"):
     else:
         return None
 
-def get_twitter_sentiment(query="Bitcoin", limit=20):
-    sentiments = []
-    for i, tweet in enumerate(sntwitter.TwitterSearchScraper(f'{query} lang:fr').get_items()):
-        if i >= limit:
-            break
-        blob = TextBlob(tweet.content)
-        sentiments.append(blob.sentiment.polarity)
-    if sentiments:
-        return sum(sentiments) / len(sentiments)
-    else:
-        return None
+
+
 
 def plot_trends(keyword="Bitcoin", timeframe="now 7-d"):
     pytrends = TrendReq(hl='fr-FR', tz=360)
@@ -742,5 +742,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
