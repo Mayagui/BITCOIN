@@ -11,6 +11,7 @@ streamlit-autorefresh==1.0.1
 textblob==0.17.1
 newspaper3k
 lxml
+lxml_html_clean
 python-binance==1.0.19
 python-dotenv==1.0.0
 beautifulsoup4==4.12.2
