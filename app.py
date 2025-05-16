@@ -6,7 +6,6 @@ st.set_page_config(
     layout="wide"
 )
 
-import ccxt
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -22,6 +21,7 @@ import hashlib
 from textblob import TextBlob
 import newspaper
 import os
+import yfinance as yf
 
 
 from sklearn.ensemble import RandomForestClassifier
@@ -68,51 +68,72 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-class BitcoinAnalyzer:
-    def __init__(self):
-        self.exchange = ccxt.binance({
-            'enableRateLimit': True,
-            'timeout': 30000
-        })
-        self.last_data = None
-        self.last_update = None
-    
-    def get_current_price(self):
-        try:
-            ticker = self.exchange.fetch_ticker('BTC/USDT')
-            return {
-                'price': ticker['last'],
-                'volume': ticker['quoteVolume'],
-                'change': ticker['percentage']
-            }
-        except Exception as e:
-            st.error(f"Erreur lors de la récupération du prix actuel : {str(e)}")
-            return None
-    
-    def get_historical_data(self, timeframe='1d', start_date=None, end_date=None):
-        try:
-            if start_date is None or end_date is None:
-                end_date = datetime.now(pytz.UTC)
-                start_date = end_date - timedelta(days=365)
-            since = int(start_date.timestamp() * 1000)
-            ohlcv = self.exchange.fetch_ohlcv(
-                symbol='BTC/USDT',
-                timeframe=timeframe,
-                since=since,
-                limit=1500
-            )
-            df = pd.DataFrame(
-                ohlcv,
-                columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            )
-            # Conversion explicite
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True).dt.tz_localize(None)
-            end_date_pd = pd.Timestamp(end_date).tz_localize(None)
-            df = df[df['timestamp'] <= end_date_pd]
-            return df
-        except Exception as e:
-            st.error(f"Erreur lors de la récupération des données : {str(e)}")
-            return None
+# --- CODE BINANCE COMMENTÉ CAR NON UTILISÉ ---
+
+# import ccxt
+
+# class BitcoinAnalyzer:
+#     def __init__(self):
+#         self.exchange = ccxt.binance({
+#             'enableRateLimit': True,
+#             'timeout': 30000
+#         })
+#         self.last_data = None
+#         self.last_update = None
+#     
+#     def get_current_price(self):
+#         try:
+#             ticker = self.exchange.fetch_ticker('BTC/USDT')
+#             return {
+#                 'price': ticker['last'],
+#                 'volume': ticker['quoteVolume'],
+#                 'change': ticker['percentage']
+#             }
+#         except Exception as e:
+#             st.error(f"Erreur lors de la récupération du prix actuel : {str(e)}")
+#             return None
+#     
+#     def get_historical_data(self, timeframe='1d', start_date=None, end_date=None):
+#         try:
+#             if start_date is None or end_date is None:
+#                 end_date = datetime.now(pytz.UTC)
+#                 start_date = end_date - timedelta(days=365)
+#             since = int(start_date.timestamp() * 1000)
+#             ohlcv = self.exchange.fetch_ohlcv(
+#                 symbol='BTC/USDT',
+#                 timeframe=timeframe,
+#                 since=since,
+#                 limit=1500
+#             )
+#             df = pd.DataFrame(
+#                 ohlcv,
+#                 columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+#             )
+#             # Conversion explicite
+#             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True).dt.tz_localize(None)
+#             end_date_pd = pd.Timestamp(end_date).tz_localize(None)
+#             df = df[df['timestamp'] <= end_date_pd]
+#             return df
+#         except Exception as e:
+#             st.error(f"Erreur lors de la récupération des données : {str(e)}")
+#             return None
+
+# def fetch_historical_data(symbol="BTC/USDT", timeframe="1d", since_days=365*5):
+#     exchange = ccxt.binance()
+#     since = exchange.parse8601((datetime.utcnow() - timedelta(days=since_days)).strftime('%Y-%m-%dT%H:%M:%S'))
+#     all_ohlcv = []
+#     limit = 1000
+#     while True:
+#         ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
+#         if not ohlcv:
+#             break
+#         all_ohlcv += ohlcv
+#         since = ohlcv[-1][0] + 1
+#         if len(ohlcv) < limit:
+#             break
+#     df = pd.DataFrame(all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+#     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+#     return df
 
 class DatabaseManager:
     def __init__(self):
@@ -196,21 +217,11 @@ class DatabaseManager:
             st.error(f"Erreur de lecture: {str(e)}")
             return pd.DataFrame()
 
-def fetch_historical_data(symbol="BTC/USDT", timeframe="1d", since_days=365*5):
-    exchange = ccxt.binance()
-    since = exchange.parse8601((datetime.utcnow() - timedelta(days=since_days)).strftime('%Y-%m-%dT%H:%M:%S'))
-    all_ohlcv = []
-    limit = 1000
-    while True:
-        ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
-        if not ohlcv:
-            break
-        all_ohlcv += ohlcv
-        since = ohlcv[-1][0] + 1
-        if len(ohlcv) < limit:
-            break
-    df = pd.DataFrame(all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+def get_btc_usdt_history(period="1y", interval="1d"):
+    ticker = yf.Ticker("BTC-USD")
+    df = ticker.history(period=period, interval=interval)
+    df = df.reset_index()
+    df.rename(columns={"Date": "timestamp", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"}, inplace=True)
     return df
 
 def display_single_metric(container, label, value, delta=None, delta_color=None):
@@ -580,7 +591,6 @@ def ml_performance_report(df):
     return cm, report
 
 def main():
-    analyzer = BitcoinAnalyzer()
     db = DatabaseManager()
     
     with st.sidebar:
@@ -612,18 +622,18 @@ def main():
         days_to_show = st.slider("Historique à afficher (jours)", 1, 30, 7)
 
     if st.button("Importer l'historique BTC/USDT (1 an)"):
-        df_hist = fetch_historical_data("BTC/USDT", "1d", since_days=365)
+        df_hist = get_btc_usdt_history(period="1y", interval="1d")
         db.save_bulk_data(df_hist)
         st.success(f"{len(df_hist)} lignes importées dans la base.")
 
     if st.button("Importer l'historique BTC/USDT (5 ans)"):
-        df_hist_5y = fetch_historical_data("BTC/USDT", "1d", since_days=365*5)
+        df_hist_5y = get_btc_usdt_history(period="5y", interval="1d")
         db.save_bulk_data(df_hist_5y)
         st.success(f"{len(df_hist_5y)} lignes importées dans la base (5 ans).")
 
     if st.button("Mettre à jour le CSV (5 ans)"):
         with st.spinner("Téléchargement en cours..."):
-            df_hist_5y = fetch_historical_data("BTC/USDT", "1d", since_days=365*5)
+            df_hist_5y = get_btc_usdt_history(period="5y", interval="1d")
             df_hist_5y.to_csv("bitcoin_5y.csv", index=False)
             st.success(f"{len(df_hist_5y)} lignes sauvegardées dans bitcoin_5y.csv")
 
@@ -661,11 +671,15 @@ def main():
         period_days = period_to_days(period_label[1])
         end_date = datetime.now(pytz.UTC)
         start_date = end_date - timedelta(days=period_days)
-        df = analyzer.get_historical_data(timeframe[1], start_date, end_date)
+        df = get_btc_usdt_history(period="1y", interval="1d")
 
     # --- Affichage des métriques et du graphique (toujours affichés) ---
     if df is not None and not df.empty:
-        current_data = analyzer.get_current_price()
+        current_data = {
+            'price': df['close'].iloc[-1],
+            'volume': df['volume'].iloc[-1],
+            'change': df['close'].pct_change().iloc[-1] * 100
+        }
         if current_data:
             rsi = ta.momentum.rsi(df['close']).iloc[-1]
             macd_val = ta.trend.macd(df['close']).iloc[-1]
