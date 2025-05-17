@@ -41,15 +41,15 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import confusion_matrix, classification_report
 
-# Rafraîchissement automatique toutes les 60 secondes
-if "streamlit_autorefresh" not in missing_modules:
-    st_autorefresh(interval=60 * 1000, key="refresh")
-
 st.set_page_config(
     page_title="Bitcoin Analytics",
     page_icon="₿",
     layout="wide"
 )
+
+# Rafraîchissement automatique toutes les 60 secondes
+if "streamlit_autorefresh" not in missing_modules:
+    st_autorefresh(interval=60 * 1000, key="refresh")
 
 # --- CSS custom ---
 def custom_css():
@@ -434,11 +434,10 @@ def main():
     use_csv = os.path.exists(csv_path) and period_label[1] in ["3y", "4y", "5y"]
 
     if use_csv:
-        df = pd.read_csv(csv_path, parse_dates=["timestamp"])
-        period_days = period_to_days(period_label[1])
-        end_date = pd.Timestamp.now()
-        start_date = end_date - pd.Timedelta(days=period_days)
-        df = df[(df["timestamp"] >= start_date) & (df["timestamp"] <= end_date)]
+        df = pd.read_csv(csv_path)
+        if "timestamp" not in df.columns and "Date" in df.columns:
+            df.rename(columns={"Date": "timestamp"}, inplace=True)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
     else:
         period_days = period_to_days(period_label[1])
         end_date = datetime.now(pytz.UTC)
@@ -525,14 +524,16 @@ def main():
         if st.button("Prédire la tendance ML (prochain jour)"):
             if "ml_utils" not in missing_modules:
                 last_row = df.tail(1).copy()
-                last_row['rsi'] = ta.momentum.rsi(df['close']).iloc[-1]
-                last_row['macd'] = ta.trend.macd(df['close']).iloc[-1]
-                last_row['macd_signal'] = ta.trend.macd_signal(df['close']).iloc[-1]
-                last_row['volume'] = df['volume'].iloc[-1]
+                # Ne garder que les colonnes d'entraînement
+                features = ["open", "high", "low", "close", "volume"]
+                last_row = last_row[features]
                 model = load_ml_model("ml_model.pkl")
                 pred, proba = predict_next_day_price(model, last_row)
-                label = "🟢 Hausse probable" if pred == 1 else "🔴 Baisse probable"
-                st.metric("Prédiction ML", label, f"Confiance : {proba:.2%}")
+                if pred == 1:
+                    st.markdown("## <span style='color:limegreen'>Hausse probable</span>", unsafe_allow_html=True)
+                else:
+                    st.markdown("## <span style='color:#FF4B4B'>Baisse probable</span>", unsafe_allow_html=True)
+                st.markdown(f"<b>Confiance :</b> <span style='color:limegreen'>{proba:.2%}</span>", unsafe_allow_html=True)
             else:
                 st.error("Module ml_utils manquant pour la prédiction ML.")
 
