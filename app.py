@@ -1,11 +1,4 @@
 import streamlit as st
-# Configuration de la page - DOIT ÊTRE LA PREMIÈRE COMMANDE STREAMLIT
-st.set_page_config(
-    page_title="Bitcoin Analytics",
-    page_icon="₿",
-    layout="wide"
-)
-
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -15,133 +8,97 @@ import time
 from datetime import datetime, timedelta
 import pytz
 import sqlite3
-from pytrends.request import TrendReq
-from streamlit_autorefresh import st_autorefresh
-import hashlib
-from textblob import TextBlob
-import newspaper
 import os
 import yfinance as yf
 
+# Gestion des imports optionnels
+missing_modules = []
+try:
+    from pytrends.request import TrendReq
+except ImportError:
+    missing_modules.append("pytrends")
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:
+    missing_modules.append("streamlit_autorefresh")
+try:
+    from textblob import TextBlob
+except ImportError:
+    missing_modules.append("textblob")
+try:
+    import newspaper
+except ImportError:
+    missing_modules.append("newspaper")
+try:
+    from ml_utils import load_ml_model, predict_next_day_price
+except ImportError:
+    missing_modules.append("ml_utils")
+
+if missing_modules:
+    st.error(f"Modules manquants : {', '.join(missing_modules)}. Veuillez les installer pour profiter de toutes les fonctionnalités.")
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import confusion_matrix, classification_report
 
-# Rafraîchissement automatique toutes les 60 secondes (au lieu de 10)
-st_autorefresh(interval=60 * 1000, key="refresh")
+# Rafraîchissement automatique toutes les 60 secondes
+if "streamlit_autorefresh" not in missing_modules:
+    st_autorefresh(interval=60 * 1000, key="refresh")
 
-st.write("Début du script")
+st.set_page_config(
+    page_title="Bitcoin Analytics",
+    page_icon="₿",
+    layout="wide"
+)
 
-# Style personnalisé
-st.markdown("""
-<style>
-    .stMetric {
-        background-color: #1E2126;
-        border-radius: 10px;
-        padding: 10px;
-        border: 1px solid #2D3035;
-    }
-    .stMetric:hover {
-        border-color: #4A4E54;
-    }
-    .metric-label {
-        font-size: 0.8rem !important;
-        color: #7C7C7C !important;
-    }
-    .metric-value {
-        font-size: 1.8rem !important;
-        font-weight: bold !important;
-    }
-    .metric-delta {
-        font-size: 1rem !important;
-    }
-    .positive {
-        color: #00FF9F !important;
-    }
-    .negative {
-        color: #FF4B4B !important;
-    }
-    .neutral {
-        color: #7C7C7C !important;
-    }
-</style>
-""", unsafe_allow_html=True)
+# --- CSS custom ---
+def custom_css():
+    """Ajoute du CSS personnalisé à l'application Streamlit."""
+    st.markdown("""
+    <style>
+        .stMetric {
+            background-color: #1E2126;
+            border-radius: 10px;
+            padding: 10px;
+            border: 1px solid #2D3035;
+        }
+        .stMetric:hover {
+            border-color: #4A4E54;
+        }
+        .metric-label {
+            font-size: 0.8rem !important;
+            color: #7C7C7C !important;
+        }
+        .metric-value {
+            font-size: 1.8rem !important;
+            font-weight: bold !important;
+        }
+        .metric-delta {
+            font-size: 1rem !important;
+        }
+        .positive {
+            color: #00FF9F !important;
+        }
+        .negative {
+            color: #FF4B4B !important;
+        }
+        .neutral {
+            color: #7C7C7C !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- CODE BINANCE COMMENTÉ CAR NON UTILISÉ ---
+custom_css()
 
-# import ccxt
-
-# class BitcoinAnalyzer:
-#     def __init__(self):
-#         self.exchange = ccxt.binance({
-#             'enableRateLimit': True,
-#             'timeout': 30000
-#         })
-#         self.last_data = None
-#         self.last_update = None
-#     
-#     def get_current_price(self):
-#         try:
-#             ticker = self.exchange.fetch_ticker('BTC/USDT')
-#             return {
-#                 'price': ticker['last'],
-#                 'volume': ticker['quoteVolume'],
-#                 'change': ticker['percentage']
-#             }
-#         except Exception as e:
-#             st.error(f"Erreur lors de la récupération du prix actuel : {str(e)}")
-#             return None
-#     
-#     def get_historical_data(self, timeframe='1d', start_date=None, end_date=None):
-#         try:
-#             if start_date is None or end_date is None:
-#                 end_date = datetime.now(pytz.UTC)
-#                 start_date = end_date - timedelta(days=365)
-#             since = int(start_date.timestamp() * 1000)
-#             ohlcv = self.exchange.fetch_ohlcv(
-#                 symbol='BTC/USDT',
-#                 timeframe=timeframe,
-#                 since=since,
-#                 limit=1500
-#             )
-#             df = pd.DataFrame(
-#                 ohlcv,
-#                 columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
-#             )
-#             # Conversion explicite
-#             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True).dt.tz_localize(None)
-#             end_date_pd = pd.Timestamp(end_date).tz_localize(None)
-#             df = df[df['timestamp'] <= end_date_pd]
-#             return df
-#         except Exception as e:
-#             st.error(f"Erreur lors de la récupération des données : {str(e)}")
-#             return None
-
-# def fetch_historical_data(symbol="BTC/USDT", timeframe="1d", since_days=365*5):
-#     exchange = ccxt.binance()
-#     since = exchange.parse8601((datetime.utcnow() - timedelta(days=since_days)).strftime('%Y-%m-%dT%H:%M:%S'))
-#     all_ohlcv = []
-#     limit = 1000
-#     while True:
-#         ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
-#         if not ohlcv:
-#             break
-#         all_ohlcv += ohlcv
-#         since = ohlcv[-1][0] + 1
-#         if len(ohlcv) < limit:
-#             break
-#     df = pd.DataFrame(all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-#     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-#     return df
-
+# --- Database Manager ---
 class DatabaseManager:
+    """Gère la base SQLite pour les prix Bitcoin."""
     def __init__(self):
-        # Stockage dans le dossier de l'application
         self.db_path = 'bitcoin_data.db'
         self.init_database()
     
     def init_database(self):
+        """Initialise la base de données SQLite."""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -165,10 +122,10 @@ class DatabaseManager:
             st.sidebar.error(f"Erreur d'initialisation de la base de données: {str(e)}")
     
     def save_data(self, data):
+        """Sauvegarde une ligne de données dans la base."""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
             cursor.execute('''
             INSERT OR REPLACE INTO bitcoin_prices 
             (timestamp, price, volume, rsi, change_24h)
@@ -180,16 +137,15 @@ class DatabaseManager:
                 data['rsi'],
                 data['change']
             ))
-            
             conn.commit()
             conn.close()
         except Exception as e:
             st.error(f"Erreur de sauvegarde: {str(e)}")
     
     def save_bulk_data(self, df):
+        """Sauvegarde un DataFrame entier dans la base."""
         try:
             conn = sqlite3.connect(self.db_path)
-            # Forcer l'ordre et la présence des colonnes
             expected_cols = [
                 'timestamp', 'open', 'high', 'low', 'close', 'price', 'volume', 'rsi', 'change_24h'
             ]
@@ -203,6 +159,7 @@ class DatabaseManager:
             st.error(f"Erreur de sauvegarde en masse: {str(e)}")
     
     def get_data(self, days=30):
+        """Récupère les données stockées sur X jours."""
         try:
             conn = sqlite3.connect(self.db_path)
             query = '''
@@ -218,28 +175,19 @@ class DatabaseManager:
             return pd.DataFrame()
 
 def get_btc_usdt_history(period="1y", interval="1d"):
-    ticker = yf.Ticker("BTC-USD")
-    df = ticker.history(period=period, interval=interval)
-    df = df.reset_index()
-    df.rename(columns={"Date": "timestamp", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"}, inplace=True)
-    return df
-
-def display_single_metric(container, label, value, delta=None, delta_color=None):
-    with container:
-        if delta_color == "positive":
-            delta_prefix = "↑ "
-        elif delta_color == "negative":
-            delta_prefix = "↓ "
-        else:
-            delta_prefix = ""
-            
-        st.metric(
-            label=label,
-            value=value,
-            delta=f"{delta_prefix}{delta}" if delta else None
-        )
+    """Télécharge l'historique BTC-USD depuis Yahoo Finance."""
+    try:
+        ticker = yf.Ticker("BTC-USD")
+        df = ticker.history(period=period, interval=interval)
+        df = df.reset_index()
+        df.rename(columns={"Date": "timestamp", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"}, inplace=True)
+        return df
+    except Exception as e:
+        st.error(f"Erreur lors du téléchargement des données Yahoo Finance : {e}")
+        return pd.DataFrame()
 
 def add_export_button(df):
+    """Ajoute un bouton d'export CSV."""
     if not df.empty:
         csv = df.to_csv(index=False)
         st.download_button(
@@ -250,16 +198,15 @@ def add_export_button(df):
         )
 
 def create_price_chart(df):
+    """Crée le graphique principal avec Plotly."""
     fig = make_subplots(
-        rows=4,  # Passe à 4 lignes
+        rows=4,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.05,
         row_heights=[0.5, 0.15, 0.15, 0.2],
         subplot_titles=('BTC/USDT', 'RSI', 'MACD', 'Volume')
     )
-
-    # Chandeliers
     fig.add_trace(
         go.Candlestick(
             x=df['timestamp'],
@@ -271,8 +218,6 @@ def create_price_chart(df):
         ),
         row=1, col=1
     )
-
-    # Moyennes mobiles
     for window, color in zip([50, 100, 200], ['red', 'green', 'purple']):
         ma = ta.trend.sma_indicator(df['close'], window=window)
         fig.add_trace(
@@ -284,8 +229,6 @@ def create_price_chart(df):
             ),
             row=1, col=1
         )
-
-    # RSI
     rsi = ta.momentum.rsi(df['close'])
     fig.add_trace(
         go.Scatter(
@@ -298,8 +241,6 @@ def create_price_chart(df):
     )
     fig.add_hline(y=70, line_dash="dash", line_color="red", row=2)
     fig.add_hline(y=30, line_dash="dash", line_color="green", row=2)
-
-    # MACD
     macd = ta.trend.macd(df['close'])
     macd_signal = ta.trend.macd_signal(df['close'])
     fig.add_trace(
@@ -320,8 +261,6 @@ def create_price_chart(df):
         ),
         row=3, col=1
     )
-
-    # Volume
     colors = ['red' if row['open'] > row['close'] else 'green' for _, row in df.iterrows()]
     fig.add_trace(
         go.Bar(
@@ -332,7 +271,6 @@ def create_price_chart(df):
         ),
         row=4, col=1
     )
-
     fig.update_layout(
         height=1000,
         template='plotly_dark',
@@ -340,14 +278,12 @@ def create_price_chart(df):
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
     )
-
     return fig
 
 def get_google_trends_score(keyword="Bitcoin", timeframe="now 7-d", geo=""):
-    """
-    Récupère l'intérêt Google Trends pour un mot-clé.
-    Retourne le score moyen sur la période.
-    """
+    """Récupère l'intérêt Google Trends pour un mot-clé."""
+    if "pytrends" in missing_modules:
+        return None, None
     try:
         pytrends = TrendReq(hl='fr-FR', tz=360)
         pytrends.build_payload([keyword], cat=0, timeframe=timeframe, geo=geo, gprop='')
@@ -361,107 +297,67 @@ def get_google_trends_score(keyword="Bitcoin", timeframe="now 7-d", geo=""):
         st.warning(f"Erreur Google Trends : {e}")
         return None, None
 
-@st.cache_data(ttl=3600)  # Cache la donnée pendant 1h
+@st.cache_data(ttl=3600)
 def get_google_trends_score_cached(keyword="Bitcoin", timeframe="now 7-d", geo=""):
     return get_google_trends_score(keyword, timeframe, geo)
 
 def get_google_news_sentiment(query="Bitcoin", lang="fr"):
-    """
-    Analyse de sentiment sur les titres Google News pour un mot-clé.
-    Retourne le score moyen de sentiment.
-    """
-    url = f"https://news.google.com/rss/search?q={query}&hl={lang}"
-    paper = newspaper.build(url, memoize_articles=False)
-    sentiments = []
-    for article in paper.articles[:10]:
-        try:
-            article.download()
-            article.parse()
-            blob = TextBlob(article.title)
-            sentiments.append(blob.sentiment.polarity)
-        except Exception:
-            continue
-    if sentiments:
-        return sum(sentiments) / len(sentiments)
-    else:
+    """Analyse de sentiment sur les titres Google News pour un mot-clé."""
+    if "newspaper" in missing_modules or "textblob" in missing_modules:
+        return None
+    try:
+        url = f"https://news.google.com/rss/search?q={query}&hl={lang}"
+        paper = newspaper.build(url, memoize_articles=False)
+        sentiments = []
+        for article in paper.articles[:10]:
+            try:
+                article.download()
+                article.parse()
+                blob = TextBlob(article.title)
+                sentiments.append(blob.sentiment.polarity)
+            except Exception:
+                continue
+        if sentiments:
+            return sum(sentiments) / len(sentiments)
+        else:
+            return None
+    except Exception as e:
+        st.warning(f"Erreur Google News : {e}")
         return None
 
-
-
-
-def plot_trends(keyword="Bitcoin", timeframe="now 7-d"):
-    pytrends = TrendReq(hl='fr-FR', tz=360)
-    pytrends.build_payload([keyword], cat=0, timeframe=timeframe)
-    data = pytrends.interest_over_time()
-    if not data.empty:
-        st.line_chart(data[keyword])
-    else:
-        st.info("Pas de données Google Trends pour cette période.")
-
-def period_to_days(period_code):
-    if period_code == "1m":
-        return 30
-    elif period_code == "3m":
-        return 90
-    elif period_code == "6m":
-        return 180
-    elif period_code == "1y":
-        return 365
-    elif period_code == "2y":
-        return 365*2
-    elif period_code == "3y":
-        return 365*3
-    elif period_code == "4y":
-        return 365*4
-    elif period_code == "5y":
-        return 365*5
-    else:
-        return 365  # Par défaut 1 an
-
 def compute_global_score(rsi, macd, macd_signal, price_change, sentiment, trends_score):
+    """Calcule un score global synthétique."""
     score = 0
-    # RSI : suracheté (<30) ou survendu (>70)
     if rsi < 30:
         score += 1
     elif rsi > 70:
         score -= 1
-
-    # MACD croise au-dessus du signal = haussier
     if macd > macd_signal:
         score += 1
     else:
         score -= 1
-
-    # Variation du prix sur 24h
     if price_change > 0:
         score += 1
     else:
         score -= 1
-
-    # Sentiment Google News
     if sentiment is not None:
         if sentiment > 0.1:
             score += 1
         elif sentiment < -0.1:
             score -= 1
-
-    # Google Trends
     if trends_score is not None:
         if trends_score > 50:
             score += 1
         else:
             score -= 1
-
-    # Score global sur 5
     return score
 
 def detect_rsi_divergence(df):
-    # Divergence haussière : prix fait un plus bas, RSI fait un plus haut
+    """Détecte une divergence RSI sur les 10 derniers points."""
     if len(df) < 20:
         return None
     price = df['close']
     rsi = ta.momentum.rsi(df['close'])
-    # Compare les 10 derniers points
     if price.iloc[-1] < price.iloc[-10] and rsi.iloc[-1] > rsi.iloc[-10]:
         return "Divergence haussière"
     elif price.iloc[-1] > price.iloc[-10] and rsi.iloc[-1] < rsi.iloc[-10]:
@@ -469,130 +365,17 @@ def detect_rsi_divergence(df):
     else:
         return None
 
-def detect_trend(df):
-    score = 0
-    close = df['close'].iloc[-1]
-    sma50 = ta.trend.sma_indicator(df['close'], window=50).iloc[-1]
-    sma200 = ta.trend.sma_indicator(df['close'], window=200).iloc[-1]
-    macd = ta.trend.macd(df['close']).iloc[-1]
-    macd_signal = ta.trend.macd_signal(df['close']).iloc[-1]
-    rsi = ta.momentum.rsi(df['close']).iloc[-1]
-
-    # Moyennes mobiles
-    if close > sma50 > sma200:
-        score += 1
-    elif close < sma50 < sma200:
-        score -= 1
-
-    # MACD
-    if macd > macd_signal:
-        score += 1
-    else:
-        score -= 1
-
-    # RSI
-    if rsi > 60:
-        score += 1
-    elif rsi < 40:
-        score -= 1
-
-    # Interprétation
-    if score >= 2:
-        return "🟢 Forte tendance haussière"
-    elif score == 1:
-        return "🟢 Tendance haussière"
-    elif score == 0:
-        return "⚪️ Tendance neutre"
-    elif score == -1:
-        return "🔴 Tendance baissière"
-    else:
-        return "🔴 Forte tendance baissière"
-
-def backtest_strategy(df, score_func, threshold=1):
-    """
-    Backtest simple : achat si score > threshold, vente sinon.
-    On suppose qu'on est toujours investi ou non (pas de levier, pas de frais).
-    """
-    df = df.copy()
-    df['rsi'] = ta.momentum.rsi(df['close'])
-    df['macd'] = ta.trend.macd(df['close'])
-    df['macd_signal'] = ta.trend.macd_signal(df['close'])
-    df['trends_score'], _ = get_google_trends_score_cached("Bitcoin", "now 7-d")
-    df['news_sentiment'] = get_google_news_sentiment("Bitcoin")
-    df['score'] = df.apply(
-        lambda row: score_func(
-            row['rsi'],
-            row['macd'],
-            row['macd_signal'],
-            row['close'].pct_change() * 100 if not pd.isna(row['close']) else 0,
-            row['news_sentiment'],
-            row['trends_score']
-        ), axis=1
-    )
-    df['signal'] = df['score'] > threshold
-    df['btc_ret'] = df['close'].pct_change()
-    df['strategy_ret'] = df['btc_ret'] * df['signal'].shift(1).fillna(0)
-    df['equity'] = (1 + df['strategy_ret']).cumprod()
-    return df
-
-@st.cache_data
-def train_ml_model(df):
-    df = df.copy().dropna()
-    # Création de la cible : 1 si le prix monte le lendemain, 0 sinon
-    df['target'] = (df['close'].shift(-1) > df['close']).astype(int)
-    features = ['rsi', 'macd', 'macd_signal', 'volume']
-    df['rsi'] = ta.momentum.rsi(df['close'])
-    df['macd'] = ta.trend.macd(df['close'])
-    df['macd_signal'] = ta.trend.macd_signal(df['close'])
-    df = df.dropna()
-    X = df[features]
-    y = df['target']
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X, y)
-    return model
-
-def optimize_ml_model(df):
-    df = df.copy().dropna()
-    df['target'] = (df['close'].shift(-1) > df['close']).astype(int)
-    features = ['rsi', 'macd', 'macd_signal', 'volume']
-    df['rsi'] = ta.momentum.rsi(df['close'])
-    df['macd'] = ta.trend.macd(df['close'])
-    df['macd_signal'] = ta.trend.macd_signal(df['close'])
-    df = df.dropna()
-    X = df[features]
-    y = df['target']
-    param_grid = {'n_estimators': [50, 100, 200], 'max_depth': [3, 5, 10, None]}
-    grid = GridSearchCV(RandomForestClassifier(random_state=42), param_grid, cv=3)
-    grid.fit(X, y)
-    return grid.best_estimator_, grid.best_params_, grid.best_score_
-
-def predict_ml_signal(model, last_row):
-    features = ['rsi', 'macd', 'macd_signal', 'volume']
-    X_pred = last_row[features].values.reshape(1, -1)
-    pred = model.predict(X_pred)[0]
-    proba = model.predict_proba(X_pred)[0][1]
-    return pred, proba
-
-def ml_performance_report(df):
-    df = df.copy().dropna()
-    df['target'] = (df['close'].shift(-1) > df['close']).astype(int)
-    features = ['rsi', 'macd', 'macd_signal', 'volume']
-    df['rsi'] = ta.momentum.rsi(df['close'])
-    df['macd'] = ta.trend.macd(df['close'])
-    df['macd_signal'] = ta.trend.macd_signal(df['close'])
-    df = df.dropna()
-    X = df[features]
-    y = df['target']
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X, y)
-    y_pred = model.predict(X)
-    cm = confusion_matrix(y, y_pred)
-    report = classification_report(y, y_pred, output_dict=True)
-    return cm, report
+def period_to_days(period_code):
+    """Convertit un code période en nombre de jours."""
+    mapping = {
+        "1m": 30, "3m": 90, "6m": 180, "1y": 365, "2y": 730,
+        "3y": 1095, "4y": 1460, "5y": 1825
+    }
+    return mapping.get(period_code, 365)
 
 def main():
+    """Point d'entrée principal de l'application Streamlit."""
     db = DatabaseManager()
-    
     with st.sidebar:
         st.title("Configuration")
         timeframe = st.selectbox(
@@ -621,6 +404,15 @@ def main():
         show_stored_data = st.checkbox("Afficher données stockées", value=True)
         days_to_show = st.slider("Historique à afficher (jours)", 1, 30, 7)
 
+    # Vérification des fichiers nécessaires
+    required_files = ["bitcoin_5y.csv", "ml_model.pkl"]
+    for file in required_files:
+        if os.path.exists(file):
+            st.success(f"✅ Fichier présent : {file}")
+        else:
+            st.error(f"❌ Fichier manquant : {file}")
+
+    # Importation de l'historique
     if st.button("Importer l'historique BTC/USDT (1 an)"):
         df_hist = get_btc_usdt_history(period="1y", interval="1d")
         db.save_bulk_data(df_hist)
@@ -637,27 +429,7 @@ def main():
             df_hist_5y.to_csv("bitcoin_5y.csv", index=False)
             st.success(f"{len(df_hist_5y)} lignes sauvegardées dans bitcoin_5y.csv")
 
-    if st.button("Optimiser le modèle ML"):
-        if 'df' in locals() and df is not None and not df.empty:
-            with st.spinner("Optimisation en cours..."):
-                best_model, best_params, best_score = optimize_ml_model(df)
-                st.success(f"Meilleurs paramètres : {best_params}")
-                st.info(f"Score de validation croisée : {best_score:.2f}")
-        else:
-            st.error("Aucune donnée chargée. Veuillez d'abord importer ou charger l'historique.")
-
-    if st.button("Afficher la performance du modèle ML"):
-        if 'df' in locals() and df is not None and not df.empty:
-            with st.spinner("Calcul en cours..."):
-                cm, report = ml_performance_report(df)
-                st.subheader("Matrice de confusion")
-                st.write(cm)
-                st.subheader("Rapport de classification")
-                st.json(report)
-        else:
-            st.error("Aucune donnée chargée. Veuillez d'abord importer ou charger l'historique.")
-
-    # --- Chargement rapide de l'historique si période longue ---
+    # Chargement rapide de l'historique si période longue
     csv_path = "bitcoin_5y.csv"
     use_csv = os.path.exists(csv_path) and period_label[1] in ["3y", "4y", "5y"]
 
@@ -673,7 +445,7 @@ def main():
         start_date = end_date - timedelta(days=period_days)
         df = get_btc_usdt_history(period="1y", interval="1d")
 
-    # --- Affichage des métriques et du graphique (toujours affichés) ---
+    # Affichage des métriques et du graphique
     if df is not None and not df.empty:
         current_data = {
             'price': df['close'].iloc[-1],
@@ -685,7 +457,6 @@ def main():
             macd_val = ta.trend.macd(df['close']).iloc[-1]
             macd_signal = ta.trend.macd_signal(df['close']).iloc[-1]
             price_change = current_data['change']
-            # Optionnel : sentiment et trends_score
             sentiment = get_google_news_sentiment("Bitcoin")
             trends_score, _ = get_google_trends_score_cached("Bitcoin", "now 7-d")
             global_score = compute_global_score(rsi, macd_val, macd_signal, price_change, sentiment, trends_score)
@@ -726,7 +497,6 @@ def main():
             }
             db.save_data(data_to_save)
 
-            # Exemple d’interprétation automatique du RSI
             if rsi > 70:
                 st.warning("⚠️ RSI suracheté : risque de correction baissière.")
             elif rsi < 30:
@@ -734,13 +504,11 @@ def main():
             else:
                 st.info("RSI neutre.")
 
-            # Exemple pour le MACD
             if macd_val > macd_signal:
                 st.success("MACD haussier : momentum positif.")
             else:
                 st.error("MACD baissier : momentum négatif.")
 
-            # Détection de divergence RSI
             divergence = detect_rsi_divergence(df)
             if divergence:
                 st.warning(f"⚠️ {divergence} détectée (RSI)")
@@ -753,6 +521,20 @@ def main():
             df_display['change_24h'] = df_display['close'].pct_change(periods=1) * 100
             st.dataframe(df_display.head(days_to_show))
             add_export_button(df_display.head(days_to_show))
+
+        if st.button("Prédire la tendance ML (prochain jour)"):
+            if "ml_utils" not in missing_modules:
+                last_row = df.tail(1).copy()
+                last_row['rsi'] = ta.momentum.rsi(df['close']).iloc[-1]
+                last_row['macd'] = ta.trend.macd(df['close']).iloc[-1]
+                last_row['macd_signal'] = ta.trend.macd_signal(df['close']).iloc[-1]
+                last_row['volume'] = df['volume'].iloc[-1]
+                model = load_ml_model("ml_model.pkl")
+                pred, proba = predict_next_day_price(model, last_row)
+                label = "🟢 Hausse probable" if pred == 1 else "🔴 Baisse probable"
+                st.metric("Prédiction ML", label, f"Confiance : {proba:.2%}")
+            else:
+                st.error("Module ml_utils manquant pour la prédiction ML.")
 
 if __name__ == "__main__":
     main()

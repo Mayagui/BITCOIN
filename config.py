@@ -1,6 +1,9 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
+from dotenv import load_dotenv
+
+load_dotenv()
 
 @dataclass
 class Config:
@@ -8,8 +11,12 @@ class Config:
     BINANCE_API_KEY: str = os.getenv("BINANCE_API_KEY", "")
     BINANCE_SECRET_KEY: str = os.getenv("BINANCE_SECRET_KEY", "")
     
+    # Paramètres MongoDB (pour Streamlit Cloud)
+    MONGO_URI: str = os.getenv("MONGO_URI", "")
+    MONGO_DB: str = os.getenv("MONGO_DB", "bitcoin_db")
+    
     # Paramètres de trading
-    TRADING_PAIRS: List[str] = ["BTC/USDT", "ETH/USDT", "BNB/USDT"]
+    TRADING_PAIRS: List[str] = field(default_factory=lambda: ["BTC/USDT", "ETH/USDT", "BNB/USDT"])
     DEFAULT_TIMEFRAME: str = "1h"
     
     # Paramètres des indicateurs
@@ -25,7 +32,7 @@ class Config:
     
     # Paramètres ML
     PREDICTION_WINDOW: int = 24  # heures
-    FEATURES: List[str] = [
+    FEATURES: List[str] = field(default_factory=lambda: [
         "rsi", "macd", "bb_upper", "bb_lower", 
         "volume_sma", "close_sma_20", "close_sma_50"
-    ] 
+    ])
