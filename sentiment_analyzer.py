@@ -179,6 +179,24 @@ def get_indicator_signals(df):
         signals.append(IndicatorSignal("OBV", obv, "neutral", 0.5, "Volume"))
     return signals
 
+def compute_signals(df):
+    df = df.copy()
+    signals = [
+        (df["signal_rsi"] == "Achat").astype(int),
+        (df["signal_macd"] == "Achat").astype(int),
+        (df["signal_stochrsi"] == "Achat").astype(int),
+        (df["signal_williams"] == "Achat").astype(int)
+    ]
+    ventes = [
+        (df["signal_rsi"] == "Vente").astype(int),
+        (df["signal_macd"] == "Vente").astype(int),
+        (df["signal_stochrsi"] == "Vente").astype(int),
+        (df["signal_williams"] == "Vente").astype(int)
+    ]
+    score = np.array(signals).sum(axis=0) - np.array(ventes).sum(axis=0)
+    df["score"] = np.sign(score)  # 1 = majorité Achat, -1 = majorité Vente, 0 = neutre
+    return df
+
 # --------- ML ---------
 def train_ml_model(df: pd.DataFrame):
     from sklearn.ensemble import RandomForestClassifier
