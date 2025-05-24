@@ -419,7 +419,16 @@ def main():
         st.success(f"{len(df_hist)} lignes importées dans la base.")
 
     if st.button("Importer l'historique BTC/USDT (5 ans)"):
+<<<<<<< Updated upstream
         df_hist_5y = get_btc_usdt_history(period="5y", interval="1d")
+=======
+        # Vider la table pour éviter les doublons de timestamp
+        conn = sqlite3.connect('bitcoin_data.db')
+        conn.execute("DELETE FROM bitcoin_prices")
+        conn.commit()
+        conn.close()
+        df_hist_5y = fetch_historical_data("BTC/USDT", "1d", since_days=365*5)
+>>>>>>> Stashed changes
         db.save_bulk_data(df_hist_5y)
         st.success(f"{len(df_hist_5y)} lignes importées dans la base (5 ans).")
 
@@ -429,7 +438,32 @@ def main():
             df_hist_5y.to_csv("bitcoin_5y.csv", index=False)
             st.success(f"{len(df_hist_5y)} lignes sauvegardées dans bitcoin_5y.csv")
 
+<<<<<<< Updated upstream
     # Chargement rapide de l'historique si période longue
+=======
+    if st.button("Optimiser le modèle ML"):
+        if 'df' in locals() and df is not None and not df.empty:
+            with st.spinner("Optimisation en cours..."):
+                best_model, best_params, best_score = optimize_ml_model(df)
+                st.success(f"Meilleurs paramètres : {best_params}")
+                st.info(f"Score de validation croisée : {best_score:.2f}")
+        else:
+            st.error("Aucune donnée chargée. Veuillez d'abord importer ou charger l'historique.")
+
+    if st.button("Afficher la performance du modèle ML"):
+        df_ml = db.get_data(days=365*5)
+        if df_ml is not None and not df_ml.empty:
+            with st.spinner("Calcul en cours..."):
+                cm, report = ml_performance_report(df_ml)
+                st.subheader("Matrice de confusion")
+                st.write(cm)
+                st.subheader("Rapport de classification")
+                st.json(report)
+        else:
+            st.error("Aucune donnée chargée. Veuillez d'abord importer ou charger l'historique.")
+
+    # --- Chargement rapide de l'historique si période longue ---
+>>>>>>> Stashed changes
     csv_path = "bitcoin_5y.csv"
     use_csv = os.path.exists(csv_path) and period_label[1] in ["3y", "4y", "5y"]
 
