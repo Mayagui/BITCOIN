@@ -1,5 +1,6 @@
 import yfinance as yf
 import pandas as pd
+<<<<<<< HEAD
 from datetime import datetime, timedelta
 import logging
 
@@ -39,3 +40,23 @@ if __name__ == "__main__":
         print(df.head())
     else:
         print("Aucune donnée sauvegardée.")
+=======
+
+def fetch_historical_data(symbol="BTC-USD", period="5y", interval="1d"):
+    df = yf.download(symbol, period=period, interval=interval)
+    df = df.reset_index()
+    df = df.rename(columns={
+        "Date": "timestamp",
+        "Open": "open",
+        "High": "high",
+        "Low": "low",
+        "Close": "close",
+        "Volume": "volume"
+    })
+    return df[["timestamp", "open", "high", "low", "close", "volume"]]
+
+if __name__ == "__main__":
+    df = fetch_historical_data()
+    df.to_csv("bitcoin_5y.csv", index=False)
+    print(f"{len(df)} lignes sauvegardées dans bitcoin_5y.csv")
+>>>>>>> 2872012 (Initial commit: Bitcoin Analysis Dashboard)

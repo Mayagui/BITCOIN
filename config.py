@@ -1,4 +1,5 @@
 import os
+<<<<<<< HEAD
 from dataclasses import dataclass, field
 from typing import List
 from dotenv import load_dotenv
@@ -17,6 +18,15 @@ class Config:
     
     # Paramètres de trading
     TRADING_PAIRS: List[str] = field(default_factory=lambda: ["BTC/USDT", "ETH/USDT", "BNB/USDT"])
+=======
+from dataclasses import dataclass
+from typing import List
+
+@dataclass
+class Config:
+    # Paramètres de trading
+    TRADING_PAIRS: List[str] = ["BTC/USDT", "ETH/USDT", "BNB/USDT"]
+>>>>>>> 2872012 (Initial commit: Bitcoin Analysis Dashboard)
     DEFAULT_TIMEFRAME: str = "1h"
     
     # Paramètres des indicateurs
@@ -32,7 +42,14 @@ class Config:
     
     # Paramètres ML
     PREDICTION_WINDOW: int = 24  # heures
+<<<<<<< HEAD
     FEATURES: List[str] = field(default_factory=lambda: [
         "rsi", "macd", "bb_upper", "bb_lower", 
         "volume_sma", "close_sma_20", "close_sma_50"
     ])
+=======
+    FEATURES: List[str] = [
+        "rsi", "macd", "bb_upper", "bb_lower", 
+        "volume_sma", "close_sma_20", "close_sma_50"
+    ]
+>>>>>>> 2872012 (Initial commit: Bitcoin Analysis Dashboard)
